@@ -1,0 +1,6 @@
+.env
+.DS_STORE
+
+data/*.csv
+data/gen_country_list.py
+data/.DS_STORE
