@@ -1,3 +1,4 @@
+#!/opt/miniconda3/envs/skyviewbot/python
 import tweepy
 import os
 import random
@@ -10,24 +11,40 @@ from time import sleep
 
 load_dotenv()
 
+# twitter API keys
 CONSUMER_KEY = os.getenv("CONSUMER_KEY")
 CONSUMER_SECRET = os.getenv("CONSUMER_SECRET")
 KEY = os.getenv("KEY")
 SECRET = os.getenv("SECRET")
+# streetview API key
 SV_API_KEY = os.getenv("STREETVIEW_API")
+# path for cron
+PATH = os.getenv("ABS_PATH")
 
+# streetview metadata API
 MDAPI = "https://maps.googleapis.com/maps/api/streetview/metadata?"
+# streetview API
 SVAPI = "https://maps.googleapis.com/maps/api/streetview?"
 
 def gen_valid_point():
-    with open("data/country-grab-bag.json", "r") as f:
+    # list of country codes with decent street view coverage by area, 
+    # ex. russia is represented many times whereas japan is not. 
+    # this is to try to align a country's land area with the 
+    # probability of choosing it
+    country_list_json = PATH + "data/country-grab-bag.json"
+    with open(country_list_json, "r") as f:
         country_grab_bag = json.load(f)
 
-    with open("data/bounding-boxes.json", "r") as f2:
+    # lat lon bounding boxes for each country
+    bounding_boxes_json = PATH + "data/bounding-boxes.json"
+    with open(bounding_boxes_json, "r") as f2:
         bounding_boxes = json.load(f2)
 
+    # choose a random country code (skewed toward larger countries)
+    # tbh should be skewed based on streetview imagery, but w/e
     country = random.choice(country_grab_bag)
-    print(country)
+
+    # get bounding box
     country_bounding_box = bounding_boxes[country][1]
 
     min_lat = country_bounding_box[1]
@@ -35,6 +52,7 @@ def gen_valid_point():
     min_lon = country_bounding_box[0]
     max_lon = country_bounding_box[2]
 
+    # pick a random location within the country's bounding box
     random_lat = round(random.uniform(min_lat, max_lat), 6)
     random_lon = round(random.uniform(min_lon, max_lon), 6)
 
@@ -42,6 +60,7 @@ def gen_valid_point():
 
     return (random_lat, random_lon)
 
+# note: image is never saved locally, just sent to twitter
 def get_streetview_image(sv_params):
     r = requests.get(SVAPI, params=sv_params)
     
@@ -56,6 +75,7 @@ def get_streetview_image(sv_params):
     
     return sv_image
 
+# convert date object to text
 def create_tweet_text(loc, date):
     dt_obj = datetime.datetime.strptime(str(date), '%Y-%m')
     date_text = dt_obj.strftime('%B %Y')
@@ -64,6 +84,7 @@ def create_tweet_text(loc, date):
 
 def get_tweet_contents():
     while True:
+        # random point within a country's bounding box
         coords = gen_valid_point()
 
         lat = coords[0]
@@ -76,8 +97,11 @@ def get_tweet_contents():
             "radius": 10000
         }
 
+        # check if imagery exists within 10,000 m of the 
+        # selected point using metadata API
         r = requests.get(MDAPI, params=params)
 
+        # if it does, get imagery
         if r.json()['status'] == "OK":
             print("streetview hit")
             print(r.url)
@@ -96,7 +120,7 @@ def get_tweet_contents():
                 "location": loc,
                 "heading": 0,
                 "size": "800x450",
-                "fov": 100,
+                "fov": 120,
                 "pitch": 90,
                 "direction": 0,
                 "key": SV_API_KEY
@@ -120,14 +144,10 @@ def main():
     except:
         print("Error during authentication")
 
-    while True:
-        try:
-            tweet = get_tweet_contents()
-            media = api.media_upload('sv.jpg', file=tweet[0])
-            api.update_status(status=tweet[1], media_ids=[media.media_id])
-            print("tweeted", tweet[1])
-            sleep(1800)
-        except tweepy.TweepError as e:
-            print(e.reason)
+    # tweet sky view image
+    tweet = get_tweet_contents()
+    media = api.media_upload('sv.jpg', file=tweet[0])
+    api.update_status(status=tweet[1], media_ids=[media.media_id])
+    print("tweeted", tweet[1])
 
 main()
